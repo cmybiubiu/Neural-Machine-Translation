@@ -373,13 +373,29 @@ class EncoderDecoder(EncoderDecoderBase):
         # 1. Relevant pytorch modules: torch.{zero_like, stack}
         # 2. Recall an LSTM's cell state is always initialized to zero.
         # 3. Note logits sequence dimension is one shorter than E (why?)
-
+        ####################################
+        # logits = []
+        # h_tilde_tm1 = None
+        # for t in range(E.size()[0] - 1):
+        #     logit, h_tilde_tm1 = self.decoder.forward(E[t], h_tilde_tm1, h, F_lens)
+        #     logits.append(logit)
+        #
+        # logits = torch.stack(logits, dim=0)
+        # return logits
+        ######################################
+        T, N = E.size()
+        htilde_tm1 = self.decoder.get_first_hidden_state(h, F_lens)
+        if self.cell_type == 'lstm':
+            cell_state = torch.zeros_like(htilde_tm1).to(htilde_tm1.device)
         logits = []
-        h_tilde_tm1 = None
-        for t in range(E.size()[0] - 1):
-            logit, h_tilde_tm1 = self.decoder.forward(E[t], h_tilde_tm1, h, F_lens)
-            logits.append(logit)
-
+        for i in range(T - 1):
+            E_tm1 = E[i, :]
+            xtilde_t = self.decoder.get_current_rnn_input(E_tm1, htilde_tm1, h, F_lens)
+            if self.cell_type == 'lstm':
+                htilde_tm1, cell_state = self.decoder.get_current_hidden_state(xtilde_t, (htilde_tm1, cell_state))
+            else:
+                htilde_tm1 = self.decoder.get_current_hidden_state(xtilde_t, htilde_tm1)
+            logits.append(self.decoder.get_current_logits(htilde_tm1))
         logits = torch.stack(logits, dim=0)
         return logits
 
