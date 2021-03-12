@@ -455,11 +455,21 @@ class EncoderDecoder(EncoderDecoderBase):
         # self.decoder = decoder_class(self.target_vocab_size, self.target_eos, self.word_embedding_size,
         #                              2 * self.encoder_hidden_size, self.cell_type)
 
-        self.encoder = encoder_class(self.source_vocab_size, self.source_pad_id, self.word_embedding_size,
-                                     self.encoder_num_hidden_layers, self.encoder_hidden_size, self.encoder_dropout,
+        self.encoder = encoder_class(self.source_vocab_size,
+                                     self.source_pad_id,
+                                     self.word_embedding_size,
+                                     self.encoder_num_hidden_layers,
+                                     self.encoder_hidden_size,
+                                     self.encoder_dropout,
                                      self.cell_type)
-        self.decoder = decoder_class(self.target_vocab_size, self.target_eos, self.word_embedding_size,
-                                     2 * self.encoder_hidden_size, self.cell_type)
+        self.decoder = decoder_class(self.target_vocab_size,
+                                     self.target_eos,
+                                     self.word_embedding_size,
+                                     self.encoder_hidden_size * 2,
+                                     self.cell_type)
+
+        self.encoder.init_submodules()
+        self.decoder.init_submodules()
 
     def get_logits_for_teacher_forcing(self, h, F_lens, E):
         # Recall:
@@ -498,14 +508,13 @@ class EncoderDecoder(EncoderDecoderBase):
         # logits = torch.stack(logits, dim=0)
         # return logits
 
-        T = E.shape[0] - 1
-        logits = []
-        htilde_tm1 = None
-        for t in range(T):
-            logit, htilde_tm1 = self.decoder(E[t + 1], htilde_tm1, h, F_lens)
-            logits.append(logit)
-        return torch.stack(logits, dim=0)
-
+        logits_arr = []
+        T = E.shape[0]
+        h_tilde_tm1 = None
+        for t in range(T - 1):  # E[0, :] has been populated with self.target_sos, get rid of the SOS
+            logits_t, htilde_t = self.decoder.forward(E[t + 1], h_tilde_tm1, h, F_lens)
+            logits_arr.append(logits_t)
+        return torch.stack(logits_arr)
 
     def update_beam(self, htilde_t, b_tm1_1, logpb_tm1, logpy_t):
         # perform the operations within the psuedo-code's loop in the
@@ -547,20 +556,35 @@ class EncoderDecoder(EncoderDecoderBase):
         #
         # return b_t_0, b_t_1, logpb_t
         ########################################################
-        log_p_b_tv = logpy_t + logpb_tm1.unsqueeze(2).expand_as(logpy_t)  # n by k by v
-        log_pb_t = torch.flatten(log_p_b_tv, start_dim=1)  # n by kv
-        logpb_t, v_optimal_indices = torch.topk(log_pb_t, self.beam_width)  # v_optimal = n by k
-        v_indices_b = v_optimal_indices.unsqueeze(0).expand_as(b_tm1_1) // self.target_vocab_size
+        # path log probability
+        # logpy_t: (M, K, V)     logpb_tm1: (M, K)
+        log_p_b_2 = logpy_t + logpb_tm1.unsqueeze(2).expand_as(logpy_t)  # (M, K, V)
+        log_p_b_2_flat = torch.flatten(log_p_b_2, start_dim=1)  # (M, KV)
+        # logpb_t: (normalized) conditional log-probability
+        logpb_t, v_opt_idx = torch.topk(log_p_b_2_flat, self.beam_width)  # (M, K)
+
+        V = logpy_t.shape[2]
+        # v_opt_idx: lec example [[0, 5]]
+        # path to keep: [[0, 1]]
+        path_to_keep = torch.div(v_opt_idx, V)  # (M, K)
+        # lec example: [[0, 2]]
+        word_to_keep = torch.remainder(v_opt_idx, V)  # (M, K)
+        word_to_keep = word_to_keep.unsqueeze(0)  # (1, M, K)
+        # choose the paths from b_tm1_1 kept for next propogation
+        # lec example: unchanged
+        # b_tm1_1: (t, M, K)
+        b_tm1_1 = torch.gather(b_tm1_1, 2, path_to_keep.unsqueeze(0).expand_as(b_tm1_1))
+
+        # b_t_1: (t + 1, M, K) which provides the token sequences of the remaining paths after the update.
+        b_t_1 = torch.cat([b_tm1_1, word_to_keep], dim=0)
+
+        # b_t_0 is a float tensor of shape (M, K, 2 * self.encoder_hidden_size) of the hidden states
+        # of the remaining paths after the update.
         if self.cell_type == 'lstm':
-            v_indices_h = v_optimal_indices.unsqueeze(2).expand_as(htilde_t[0]) // self.target_vocab_size
-            b_t_0_1 = torch.gather(htilde_t[0], 1, v_indices_h)
-            v_indices_hc = v_optimal_indices.unsqueeze(2).expand_as(htilde_t[1]) // self.target_vocab_size
-            b_t_0_2 = torch.gather(htilde_t[1], 1, v_indices_hc)
-            b_t_0 = (b_t_0_1, b_t_0_2)
+            b_t_0 = (torch.gather(htilde_t[0], 1, path_to_keep.unsqueeze(-1).expand_as(htilde_t[0])),
+                     torch.gather(htilde_t[1], 1, path_to_keep.unsqueeze(-1).expand_as(htilde_t[1])))
         else:
-            v_indices_h = v_optimal_indices.unsqueeze(2).expand_as(htilde_t) // self.target_vocab_size
-            b_t_0 = torch.gather(htilde_t, 1, v_indices_h)
-        b_t_1_pen = torch.gather(b_tm1_1, 2, v_indices_b)  # penultimate - t
-        b_t_1_ult = v_optimal_indices.remainder(self.target_vocab_size).unsqueeze(0)  # ultimate - t
-        b_t_1 = torch.cat((b_t_1_pen, b_t_1_ult), dim=0)  # t+1, n, k # get t+1
+            b_t_0 = torch.gather(htilde_t, 1, path_to_keep.unsqueeze(-1).expand_as(htilde_t))
+
         return b_t_0, b_t_1, logpb_t
+
