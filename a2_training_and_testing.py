@@ -157,15 +157,18 @@ def compute_batch_total_bleu(E_ref, E_cand, target_sos, target_eos):
     # return total_bleu
     ########################
     total_bleu = 0
-    eos = str(target_eos)
-    sos = str(target_sos)
-    E_ref = E_ref.permute(1, 0).tolist()
-    E_cand = E_cand.permute(1, 0).tolist()
-    for ref, cand in zip(E_ref, E_cand):
-        # make sure that we don't evaluate the eos and sos tokens.
-        ref = [str(x) for x in ref if str(x) != eos and str(x) != sos]
-        cand = [str(x) for x in cand if str(x) != eos and str(x) != sos]
-        total_bleu += a2_bleu_score.BLEU_score(ref, cand, 4)
+    T, N = E_ref.size()
+    for i in range(N):
+        reference = E_ref[:, i].tolist()
+        candidate = E_cand[:, i].tolist()
+        reference = reference[1:]
+        candidate = candidate[1:]
+        if target_eos in reference:
+            reference = reference[:reference.index(target_eos)]
+        if target_eos in candidate:
+            candidate = candidate[:candidate.index(target_eos)]
+        total_bleu += a2_bleu_score.BLEU_score(reference,
+                                               candidate, 4)
     print("total: %f", total_bleu)
     return total_bleu
 
