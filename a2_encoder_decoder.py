@@ -39,30 +39,18 @@ class Encoder(EncoderBase):
         # 3. cell_type will be one of: ['lstm', 'gru', 'rnn']
         # 4. Relevant pytorch modules: torch.nn.{LSTM, GRU, RNN, Embedding}
         #######
-        # if self.cell_type == 'gru':
-        #     self.rnn = torch.nn.GRU(self.word_embedding_size, self.hidden_state_size, self.num_hidden_layers,
-        #                             bidirectional=True, dropout=self.dropout)
-        # elif self.cell_type == 'rnn':
-        #     self.rnn = torch.nn.RNN(self.word_embedding_size, self.hidden_state_size, self.num_hidden_layers,
-        #                             bidirectional=True, dropout=self.dropout)
-        # elif self.cell_type == 'lstm':
-        #     self.rnn = torch.nn.LSTM(self.word_embedding_size, self.hidden_state_size, self.num_hidden_layers,
-        #                              bidirectional=True, dropout=self.dropout)
-        #
-        # self.embedding = torch.nn.Embedding(self.source_vocab_size, self.word_embedding_size, padding_idx=self.pad_id)
-        #########
-        self.embedding = torch.nn.Embedding(self.source_vocab_size, self.word_embedding_size, padding_idx=self.pad_id)
-        if self.cell_type == "rnn":
-            self.rnn = torch.nn.RNN(self.word_embedding_size, self.hidden_state_size, self.num_hidden_layers,
-                                    bidirectional=True, dropout=self.dropout)
-        elif self.cell_type == "gru":
+        if self.cell_type == 'gru':
             self.rnn = torch.nn.GRU(self.word_embedding_size, self.hidden_state_size, self.num_hidden_layers,
                                     bidirectional=True, dropout=self.dropout)
-        elif self.cell_type == "lstm":
+        elif self.cell_type == 'rnn':
+            self.rnn = torch.nn.RNN(self.word_embedding_size, self.hidden_state_size, self.num_hidden_layers,
+                                    bidirectional=True, dropout=self.dropout)
+        elif self.cell_type == 'lstm':
             self.rnn = torch.nn.LSTM(self.word_embedding_size, self.hidden_state_size, self.num_hidden_layers,
                                      bidirectional=True, dropout=self.dropout)
 
-
+        self.embedding = torch.nn.Embedding(self.source_vocab_size, self.word_embedding_size, padding_idx=self.pad_id)
+        #########
 
 
     def forward_pass(self, F, F_lens, h_pad=0.):
@@ -85,10 +73,12 @@ class Encoder(EncoderBase):
         # Recall:
         #   F is shape (S, M)
         #   x (output) is shape (S, M, I)
-        mask = (F != self.pad_id).float().unsqueeze(-1)  # shape [S,N,1]
-        x = self.embedding(F)  # shape [S,N,I]
-        x *= mask
-        return x
+        return self.embedding(F)
+
+        # mask = (F != self.pad_id).float().unsqueeze(-1)  # shape [S,N,1]
+        # x = self.embedding(F)  # shape [S,N,I]
+        # x *= mask
+        # return x
 
     def get_all_hidden_states(self, x, F_lens, h_pad):
         # Recall:
@@ -101,12 +91,17 @@ class Encoder(EncoderBase):
         #   relevant pytorch modules:
         #   torch.nn.utils.rnn.{pad_packed,pack_padded}_sequence
 
-        mask = (x == 0).all(dim=-1)  # shape = [S,N]
         x = torch.nn.utils.rnn.pack_padded_sequence(x, F_lens, enforce_sorted=False)
-        h, _ = self.rnn(x)
-        h, _ = torch.nn.utils.rnn.pad_packed_sequence(h)  # shape [S, N, 2 * H]
-        h[mask] = h_pad
+        h, _ = self.rnn.forward(x)
+        h, _ = torch.nn.utils.rnn.pad_packed_sequence(h, padding_value=h_pad)
         return h
+
+        # mask = (x == 0).all(dim=-1)  # shape = [S,N]
+        # x = torch.nn.utils.rnn.pack_padded_sequence(x, F_lens, enforce_sorted=False)
+        # h, _ = self.rnn(x)
+        # h, _ = torch.nn.utils.rnn.pad_packed_sequence(h)  # shape [S, N, 2 * H]
+        # h[mask] = h_pad
+        # return h
 
 class DecoderWithoutAttention(DecoderBase):
     '''A recurrent decoder without attention'''
@@ -123,15 +118,21 @@ class DecoderWithoutAttention(DecoderBase):
         #   torch.nn.{Embedding, Linear, LSTMCell, RNNCell, GRUCell}
         ################
         if self.cell_type == 'gru':
-            self.cell = torch.nn.GRUCell(self.word_embedding_size, self.hidden_state_size)
+            self.cell = torch.nn.GRUCell(self.word_embedding_size,
+                                         self.hidden_state_size)
         elif self.cell_type == 'rnn':
-            self.cell = torch.nn.RNNCell(self.word_embedding_size, self.hidden_state_size)
+            self.cell = torch.nn.RNNCell(self.word_embedding_size,
+                                         self.hidden_state_size)
         elif self.cell_type == 'lstm':
-            self.cell = torch.nn.LSTMCell(self.word_embedding_size, self.hidden_state_size)
+            self.cell = torch.nn.LSTMCell(self.word_embedding_size,
+                                          self.hidden_state_size)
 
-        self.embedding = torch.nn.Embedding(self.target_vocab_size, self.word_embedding_size, padding_idx=self.pad_id)
+        self.embedding = torch.nn.Embedding(self.target_vocab_size,
+                                            self.word_embedding_size,
+                                            padding_idx=self.pad_id)
 
-        self.ff = torch.nn.Linear(self.hidden_state_size, self.target_vocab_size)
+        self.ff = torch.nn.Linear(self.hidden_state_size,
+                                  self.target_vocab_size)
 
 
     def forward_pass(self, E_tm1, htilde_tm1, h, F_lens):
