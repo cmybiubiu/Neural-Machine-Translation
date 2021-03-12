@@ -172,8 +172,8 @@ class DecoderWithoutAttention(DecoderBase):
         S, M, hidden_state_size = h.size()
         last_idx = (F_lens - 1).long()  # shape = (M,)
         last_idx = last_idx.view(1, M, 1).expand(1, M, hidden_state_size)  # shape = [1, M, 2*H]
-        htilde_tm0 = h.gather(dim=0, index=last_idx).squeeze(0)  # [M, 2 * H]
-        return htilde_tm0
+        htilde_tm1 = h.gather(dim=0, index=last_idx).squeeze(0)  # [M, 2 * H]
+        return htilde_tm1
 
     def get_current_rnn_input(self, E_tm1, htilde_tm1, h, F_lens):
         # Recall:
