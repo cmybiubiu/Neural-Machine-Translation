@@ -367,11 +367,35 @@ class DecoderWithAttention(DecoderWithoutAttention):
 
         # htilde_t = htilde_t.unsqueeze(0)
         # return torch.nn.functional.cosine_similarity(htilde_t, h, dim=2)
-
-        csim = torch.nn.CosineSimilarity(dim=2)
-        htilde_t = htilde_t.unsqueeze(0)
-        similarties = csim(htilde_t, h)
-        return similarties
+        ##############
+        # csim = torch.nn.CosineSimilarity(dim=2)
+        # htilde_t = htilde_t.unsqueeze(0)
+        # similarties = csim(htilde_t, h)
+        # return similarties
+        #########
+        scores_type = "scaled-dot-product"  # {cosine, additive , dot-product, scaled-dot-product}
+        eps = 1e-8
+        S = h.size()[0]
+        htilde_t = htilde_t.unsqueeze(0).expand(S, -1, -1)  # (S, N ,2 * H)
+        if scores_type == "cosine":
+            htilde_t_norm = torch.norm(htilde_t, dim=2).unsqueeze(-1)  # (S,N,1)
+            h_norm = torch.norm(h, dim=2).unsqueeze(-1)  # (S,N,1)
+            htilde_t = htilde_t / torch.max(htilde_t_norm, eps * torch.ones_like(htilde_t_norm))
+            h = h / torch.max(h_norm, eps * torch.ones_like(h_norm))
+            e_t = (htilde_t * h).sum(dim=2)  # (S, N)
+        elif scores_type == "additive":
+            e_t = torch.cat([htilde_t, h], dim=2)  # (S, N, 4*H)
+            e_t = self.additive_attention_layer(e_t).squeeze(2)  # (S, N)
+            e_t = torch.nn.functional.tanh(e_t)
+        elif scores_type == "dot-product":
+            e_t = (htilde_t * h).sum(dim=2)
+        elif scores_type == "scaled-dot-product":
+            htilde_t_norm = torch.norm(htilde_t, dim=2)  # (S,N)
+            htilde_t_norm = torch.sqrt(htilde_t_norm)
+            e_t = (htilde_t * h).sum(dim=2) / torch.max(htilde_t_norm, eps * torch.ones_like(htilde_t_norm))
+        else:
+            raise NotImplementedError
+        return e_t
 
 
 
