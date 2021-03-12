@@ -357,8 +357,12 @@ class DecoderWithAttention(DecoderWithoutAttention):
         # Hint:
         # Relevant pytorch functions: torch.nn.functional.cosine_similarity
 
-        htilde_t = htilde_t.unsqueeze(0)
-        return torch.nn.functional.cosine_similarity(htilde_t, h, dim=2)
+        # htilde_t = htilde_t.unsqueeze(0)
+        # return torch.nn.functional.cosine_similarity(htilde_t, h, dim=2)
+
+        s = h.shape[0]
+        htilde_t = htilde_t.repeat(s, 1, 1)
+        return torch.cosine_similarity(htilde_t, h, dim=2)
 
 
 class DecoderWithMultiHeadAttention(DecoderWithAttention):
@@ -440,19 +444,20 @@ class EncoderDecoder(EncoderDecoderBase):
         # 1. Relevant pytorch modules: torch.{zero_like, stack}
         # 2. Recall an LSTM's cell state is always initialized to zero.
         # 3. Note logits sequence dimension is one shorter than E (why?)
-        T, N = E.size()
+        logits = []
+
         htilde_tm1 = self.decoder.get_first_hidden_state(h, F_lens)
         if self.cell_type == 'lstm':
             cell_state = torch.zeros_like(htilde_tm1).to(htilde_tm1.device)
-        logits = []
-        for i in range(T - 1):
-            E_tm1 = E[i, :]
-            xtilde_t = self.decoder.get_current_rnn_input(E_tm1, htilde_tm1, h, F_lens)
+
+        for i in range(E.size()[0] - 1):
+            xtilde_t = self.decoder.get_current_rnn_input(E[i, :], htilde_tm1, h, F_lens)
             if self.cell_type == 'lstm':
                 htilde_tm1, cell_state = self.decoder.get_current_hidden_state(xtilde_t, (htilde_tm1, cell_state))
             else:
                 htilde_tm1 = self.decoder.get_current_hidden_state(xtilde_t, htilde_tm1)
             logits.append(self.decoder.get_current_logits(htilde_tm1))
+
         logits = torch.stack(logits, dim=0)
         return logits
 
@@ -487,8 +492,8 @@ class EncoderDecoder(EncoderDecoderBase):
         indices_v = indices % V  # (M, K)
 
         if self.cell_type == 'lstm':
-            b_t_0 = (htilde_t[0].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[0]))
-                     , htilde_t[1].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[1])))
+            b_t_0 = (htilde_t[0].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[0])),
+                     htilde_t[1].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[1])))
         else:
             b_t_0 = htilde_t.gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t))  # (M,K,2*H)
 
