@@ -211,10 +211,11 @@ class DecoderWithoutAttention(DecoderBase):
         # htilde_tm1 = torch.cat([f.squeeze(), b.squeeze()], dim=1)
         # return htilde_tm1
 
-        mid = self.hidden_state_size // 2
-        f = h[F_lens - 1, torch.arange(F_lens.size(0), device=h.device), :mid]  # forward hidden state
-        b = h[0, :, mid:]  # backward hidden state
-        return torch.cat([f.squeeze(), b.squeeze()], dim=1)
+        h_forward = h[:, :, 0: (self.hidden_state_size // 2)]
+        matrix_forward = torch.index_select(h_forward, 0, F_lens - 1)
+        forward_direction = torch.transpose(torch.diagonal(matrix_forward, dim1=0, dim2=1), 0, 1)
+        h_backward = h[0, :, (self.hidden_state_size // 2):] # t = 0
+        return torch.cat((forward_direction, h_backward), dim=1)
 
     def get_current_rnn_input(self, E_tm1, htilde_tm1, h, F_lens):
         # Recall:
