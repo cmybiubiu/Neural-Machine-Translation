@@ -146,16 +146,28 @@ def compute_batch_total_bleu(E_ref, E_cand, target_sos, target_eos):
     # you can use E_ref.tolist() to convert the LongTensor to a python list
     # of numbers
     #######################
+    # total_bleu = 0
+    # N = E_ref.shape[1]
+    # for i in range(N):
+    #     reference_list = [x for x in E_ref[:, i].tolist() if x != target_sos and x != target_eos]
+    #     candidate_list = [x for x in E_cand[:, i].tolist() if x != target_sos and x != target_eos]
+    #     total_bleu += a2_bleu_score.BLEU_score(reference_list, candidate_list, 4)
+    #
+    # print("total: %f", total_bleu)
+    # return total_bleu
+    ########################
     total_bleu = 0
-    N = E_ref.shape[1]
-    for i in range(N):
-        reference_list = [x for x in E_ref[:, i].tolist() if x != target_sos and x != target_eos]
-        candidate_list = [x for x in E_cand[:, i].tolist() if x != target_sos and x != target_eos]
-        total_bleu += a2_bleu_score.BLEU_score(reference_list, candidate_list, 4)
-
+    eos = str(target_eos)
+    sos = str(target_sos)
+    E_ref = E_ref.permute(1, 0).tolist()
+    E_cand = E_cand.permute(1, 0).tolist()
+    for ref, cand in zip(E_ref, E_cand):
+        # make sure that we don't evaluate the eos and sos tokens.
+        ref = [str(x) for x in ref if str(x) != eos and str(x) != sos]
+        cand = [str(x) for x in cand if str(x) != eos and str(x) != sos]
+        total_bleu += a2_bleu_score.BLEU_score(ref, cand, 4)
     print("total: %f", total_bleu)
     return total_bleu
-    ########################
 
 
 
