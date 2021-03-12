@@ -368,34 +368,34 @@ class DecoderWithAttention(DecoderWithoutAttention):
         # htilde_t = htilde_t.unsqueeze(0)
         # return torch.nn.functional.cosine_similarity(htilde_t, h, dim=2)
         ##############
-        # csim = torch.nn.CosineSimilarity(dim=2)
-        # htilde_t = htilde_t.unsqueeze(0)
-        # similarties = csim(htilde_t, h)
-        # return similarties
+        csim = torch.nn.CosineSimilarity(dim=2)
+        htilde_t = htilde_t.unsqueeze(0)
+        similarties = csim(htilde_t, h)
+        return similarties
         #########
-        scores_type = "scaled-dot-product"  # {cosine, additive , dot-product, scaled-dot-product}
-        eps = 1e-8
-        S = h.size()[0]
-        htilde_t = htilde_t.unsqueeze(0).expand(S, -1, -1)  # (S, N ,2 * H)
-        if scores_type == "cosine":
-            htilde_t_norm = torch.norm(htilde_t, dim=2).unsqueeze(-1)  # (S,N,1)
-            h_norm = torch.norm(h, dim=2).unsqueeze(-1)  # (S,N,1)
-            htilde_t = htilde_t / torch.max(htilde_t_norm, eps * torch.ones_like(htilde_t_norm))
-            h = h / torch.max(h_norm, eps * torch.ones_like(h_norm))
-            e_t = (htilde_t * h).sum(dim=2)  # (S, N)
-        elif scores_type == "additive":
-            e_t = torch.cat([htilde_t, h], dim=2)  # (S, N, 4*H)
-            e_t = self.additive_attention_layer(e_t).squeeze(2)  # (S, N)
-            e_t = torch.nn.functional.tanh(e_t)
-        elif scores_type == "dot-product":
-            e_t = (htilde_t * h).sum(dim=2)
-        elif scores_type == "scaled-dot-product":
-            htilde_t_norm = torch.norm(htilde_t, dim=2)  # (S,N)
-            htilde_t_norm = torch.sqrt(htilde_t_norm)
-            e_t = (htilde_t * h).sum(dim=2) / torch.max(htilde_t_norm, eps * torch.ones_like(htilde_t_norm))
-        else:
-            raise NotImplementedError
-        return e_t
+        # scores_type = "scaled-dot-product"  # {cosine, additive , dot-product, scaled-dot-product}
+        # eps = 1e-8
+        # S = h.size()[0]
+        # htilde_t = htilde_t.unsqueeze(0).expand(S, -1, -1)  # (S, N ,2 * H)
+        # if scores_type == "cosine":
+        #     htilde_t_norm = torch.norm(htilde_t, dim=2).unsqueeze(-1)  # (S,N,1)
+        #     h_norm = torch.norm(h, dim=2).unsqueeze(-1)  # (S,N,1)
+        #     htilde_t = htilde_t / torch.max(htilde_t_norm, eps * torch.ones_like(htilde_t_norm))
+        #     h = h / torch.max(h_norm, eps * torch.ones_like(h_norm))
+        #     e_t = (htilde_t * h).sum(dim=2)  # (S, N)
+        # elif scores_type == "additive":
+        #     e_t = torch.cat([htilde_t, h], dim=2)  # (S, N, 4*H)
+        #     e_t = self.additive_attention_layer(e_t).squeeze(2)  # (S, N)
+        #     e_t = torch.nn.functional.tanh(e_t)
+        # elif scores_type == "dot-product":
+        #     e_t = (htilde_t * h).sum(dim=2)
+        # elif scores_type == "scaled-dot-product":
+        #     htilde_t_norm = torch.norm(htilde_t, dim=2)  # (S,N)
+        #     htilde_t_norm = torch.sqrt(htilde_t_norm)
+        #     e_t = (htilde_t * h).sum(dim=2) / torch.max(htilde_t_norm, eps * torch.ones_like(htilde_t_norm))
+        # else:
+        #     raise NotImplementedError
+        # return e_t
 
 
 
@@ -495,29 +495,29 @@ class EncoderDecoder(EncoderDecoderBase):
         # logits = torch.stack(logits, dim=0)
         # return logits
         ######################################
-        # T, N = E.size()
-        # htilde_tm1 = self.decoder.get_first_hidden_state(h, F_lens)
-        # if self.cell_type == 'lstm':
-        #     cell_state = torch.zeros_like(htilde_tm1).to(htilde_tm1.device)
-        # logits = []
-        # for i in range(T - 1):
-        #     E_tm1 = E[i, :]
-        #     xtilde_t = self.decoder.get_current_rnn_input(E_tm1, htilde_tm1, h, F_lens)
-        #     if self.cell_type == 'lstm':
-        #         htilde_tm1, cell_state = self.decoder.get_current_hidden_state(xtilde_t, (htilde_tm1, cell_state))
-        #     else:
-        #         htilde_tm1 = self.decoder.get_current_hidden_state(xtilde_t, htilde_tm1)
-        #     logits.append(self.decoder.get_current_logits(htilde_tm1))
-        # logits = torch.stack(logits, dim=0)
-        # return logits
+        T, N = E.size()
+        htilde_tm1 = self.decoder.get_first_hidden_state(h, F_lens)
+        if self.cell_type == 'lstm':
+            cell_state = torch.zeros_like(htilde_tm1).to(htilde_tm1.device)
+        logits = []
+        for i in range(T - 1):
+            E_tm1 = E[i, :]
+            xtilde_t = self.decoder.get_current_rnn_input(E_tm1, htilde_tm1, h, F_lens)
+            if self.cell_type == 'lstm':
+                htilde_tm1, cell_state = self.decoder.get_current_hidden_state(xtilde_t, (htilde_tm1, cell_state))
+            else:
+                htilde_tm1 = self.decoder.get_current_hidden_state(xtilde_t, htilde_tm1)
+            logits.append(self.decoder.get_current_logits(htilde_tm1))
+        logits = torch.stack(logits, dim=0)
+        return logits
 
-        logits_arr = []
-        T = E.shape[0]
-        h_tilde_tm1 = None
-        for t in range(T - 1):  # E[0, :] has been populated with self.target_sos, get rid of the SOS
-            logits_t, htilde_t = self.decoder.forward(E[t + 1], h_tilde_tm1, h, F_lens)
-            logits_arr.append(logits_t)
-        return torch.stack(logits_arr)
+        # logits_arr = []
+        # T = E.shape[0]
+        # h_tilde_tm1 = None
+        # for t in range(T - 1):  # E[0, :] has been populated with self.target_sos, get rid of the SOS
+        #     logits_t, htilde_t = self.decoder.forward(E[t + 1], h_tilde_tm1, h, F_lens)
+        #     logits_arr.append(logits_t)
+        # return torch.stack(logits_arr)
 
     def update_beam(self, htilde_t, b_tm1_1, logpb_tm1, logpy_t):
         # perform the operations within the psuedo-code's loop in the
@@ -540,54 +540,54 @@ class EncoderDecoder(EncoderDecoderBase):
         # 2. If you flatten a two-dimensional array of shape z of (A, B),
         #   then the element z[a, b] maps to z'[a*B + b]
         ####################################################
-        # M, K, V = logpy_t.size()
-        # logpb_tm1 = logpb_tm1.unsqueeze(-1).expand(-1, -1, V)
-        # logpb_t = logpb_tm1 + logpy_t  # (M,K,V)
-        # logpb_t, indices = logpb_t.view(M, -1).tpk(self.beam_width, dim=1)  # (M,K), (M,K)
-        #
-        # indices_k = indices // V  # (M, K)
-        # indices_v = indices % V  # (M, K)
-        #
-        # if self.cell_type == 'lstm':
-        #     b_t_0 = (htilde_t[0].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[0]))
-        #              , htilde_t[1].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[1])))
-        # else:
-        #     b_t_0 = htilde_t.gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t))  # (M,K,2*H)
-        #
-        # b_tm1_1 = b_tm1_1.gather(dim=2, index=indices_k.unsqueeze(0).expand_as(b_tm1_1))  # (t,M,K)
-        # b_t_1 = torch.cat([b_tm1_1, indices_v.unsqueeze(0)], dim=0)
-        #
-        # return b_t_0, b_t_1, logpb_t
-        ########################################################
-        # path log probability
-        # logpy_t: (M, K, V)     logpb_tm1: (M, K)
-        log_p_b_2 = logpy_t + logpb_tm1.unsqueeze(2).expand_as(logpy_t)  # (M, K, V)
-        log_p_b_2_flat = torch.flatten(log_p_b_2, start_dim=1)  # (M, KV)
-        # logpb_t: (normalized) conditional log-probability
-        logpb_t, v_opt_idx = torch.topk(log_p_b_2_flat, self.beam_width)  # (M, K)
+        M, K, V = logpy_t.size()
+        logpb_tm1 = logpb_tm1.unsqueeze(-1).expand(-1, -1, V)
+        logpb_t = logpb_tm1 + logpy_t  # (M,K,V)
+        logpb_t, indices = logpb_t.view(M, -1).tpk(self.beam_width, dim=1)  # (M,K), (M,K)
 
-        V = logpy_t.shape[2]
-        # v_opt_idx: lec example [[0, 5]]
-        # path to keep: [[0, 1]]
-        path_to_keep = torch.div(v_opt_idx, V)  # (M, K)
-        # lec example: [[0, 2]]
-        word_to_keep = torch.remainder(v_opt_idx, V)  # (M, K)
-        word_to_keep = word_to_keep.unsqueeze(0)  # (1, M, K)
-        # choose the paths from b_tm1_1 kept for next propogation
-        # lec example: unchanged
-        # b_tm1_1: (t, M, K)
-        b_tm1_1 = torch.gather(b_tm1_1, 2, path_to_keep.unsqueeze(0).expand_as(b_tm1_1))
+        indices_k = indices // V  # (M, K)
+        indices_v = indices % V  # (M, K)
 
-        # b_t_1: (t + 1, M, K) which provides the token sequences of the remaining paths after the update.
-        b_t_1 = torch.cat([b_tm1_1, word_to_keep], dim=0)
-
-        # b_t_0 is a float tensor of shape (M, K, 2 * self.encoder_hidden_size) of the hidden states
-        # of the remaining paths after the update.
         if self.cell_type == 'lstm':
-            b_t_0 = (torch.gather(htilde_t[0], 1, path_to_keep.unsqueeze(-1).expand_as(htilde_t[0])),
-                     torch.gather(htilde_t[1], 1, path_to_keep.unsqueeze(-1).expand_as(htilde_t[1])))
+            b_t_0 = (htilde_t[0].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[0]))
+                     , htilde_t[1].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[1])))
         else:
-            b_t_0 = torch.gather(htilde_t, 1, path_to_keep.unsqueeze(-1).expand_as(htilde_t))
+            b_t_0 = htilde_t.gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t))  # (M,K,2*H)
+
+        b_tm1_1 = b_tm1_1.gather(dim=2, index=indices_k.unsqueeze(0).expand_as(b_tm1_1))  # (t,M,K)
+        b_t_1 = torch.cat([b_tm1_1, indices_v.unsqueeze(0)], dim=0)
 
         return b_t_0, b_t_1, logpb_t
+        ########################################################
+        # # path log probability
+        # # logpy_t: (M, K, V)     logpb_tm1: (M, K)
+        # log_p_b_2 = logpy_t + logpb_tm1.unsqueeze(2).expand_as(logpy_t)  # (M, K, V)
+        # log_p_b_2_flat = torch.flatten(log_p_b_2, start_dim=1)  # (M, KV)
+        # # logpb_t: (normalized) conditional log-probability
+        # logpb_t, v_opt_idx = torch.topk(log_p_b_2_flat, self.beam_width)  # (M, K)
+        #
+        # V = logpy_t.shape[2]
+        # # v_opt_idx: lec example [[0, 5]]
+        # # path to keep: [[0, 1]]
+        # path_to_keep = torch.div(v_opt_idx, V)  # (M, K)
+        # # lec example: [[0, 2]]
+        # word_to_keep = torch.remainder(v_opt_idx, V)  # (M, K)
+        # word_to_keep = word_to_keep.unsqueeze(0)  # (1, M, K)
+        # # choose the paths from b_tm1_1 kept for next propogation
+        # # lec example: unchanged
+        # # b_tm1_1: (t, M, K)
+        # b_tm1_1 = torch.gather(b_tm1_1, 2, path_to_keep.unsqueeze(0).expand_as(b_tm1_1))
+        #
+        # # b_t_1: (t + 1, M, K) which provides the token sequences of the remaining paths after the update.
+        # b_t_1 = torch.cat([b_tm1_1, word_to_keep], dim=0)
+        #
+        # # b_t_0 is a float tensor of shape (M, K, 2 * self.encoder_hidden_size) of the hidden states
+        # # of the remaining paths after the update.
+        # if self.cell_type == 'lstm':
+        #     b_t_0 = (torch.gather(htilde_t[0], 1, path_to_keep.unsqueeze(-1).expand_as(htilde_t[0])),
+        #              torch.gather(htilde_t[1], 1, path_to_keep.unsqueeze(-1).expand_as(htilde_t[1])))
+        # else:
+        #     b_t_0 = torch.gather(htilde_t, 1, path_to_keep.unsqueeze(-1).expand_as(htilde_t))
+        #
+        # return b_t_0, b_t_1, logpb_t
 
