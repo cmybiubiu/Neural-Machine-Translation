@@ -540,23 +540,19 @@ class EncoderDecoder(EncoderDecoderBase):
         # 2. If you flatten a two-dimensional array of shape z of (A, B),
         #   then the element z[a, b] maps to z'[a*B + b]
         ####################################################
-        M, K, V = logpy_t.size()
+        N, K, V = logpy_t.size()
         logpb_tm1 = logpb_tm1.unsqueeze(-1).expand(-1, -1, V)
-        logpb_t = logpb_tm1 + logpy_t  # (M,K,V)
-        logpb_t, indices = logpb_t.view(M, -1).tpk(self.beam_width, dim=1)  # (M,K), (M,K)
-
-        indices_k = indices // V  # (M, K)
-        indices_v = indices % V  # (M, K)
-
+        logpb_t = logpb_tm1 + logpy_t  # (N,K,V)
+        logpb_t, indices = logpb_t.view(N, -1).topk(self.beam_width, dim=1)  # (N,K), (N,K)
+        indices_k = indices // V  # (N, K)
+        indices_v = indices % V  # (N, K)
         if self.cell_type == 'lstm':
             b_t_0 = (htilde_t[0].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[0]))
                      , htilde_t[1].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[1])))
         else:
-            b_t_0 = htilde_t.gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t))  # (M,K,2*H)
-
-        b_tm1_1 = b_tm1_1.gather(dim=2, index=indices_k.unsqueeze(0).expand_as(b_tm1_1))  # (t,M,K)
+            b_t_0 = htilde_t.gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t))  # (N,K,2*H)
+        b_tm1_1 = b_tm1_1.gather(dim=2, index=indices_k.unsqueeze(0).expand_as(b_tm1_1))  # (t,N,K)
         b_t_1 = torch.cat([b_tm1_1, indices_v.unsqueeze(0)], dim=0)
-
         return b_t_0, b_t_1, logpb_t
         ########################################################
         # # path log probability
