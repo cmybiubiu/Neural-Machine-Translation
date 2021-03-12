@@ -209,14 +209,10 @@ class DecoderWithoutAttention(DecoderBase):
         #   F_lens is of shape (M,)
         #   xtilde_t (output) is of shape (M, Itilde)
 
-        # mask = (E_tm1 != self.pad_id).float().unsqueeze(1)
-        # xtilde_t = self.embedding(E_tm1) * mask
-        # return xtilde_t
-
-        mask = (E_tm1 != self.pad_id).float().unsqueeze(1)  # (N,1)
-        xtilde_t = self.embedding(E_tm1)
-        xtilde_t *= mask
+        mask = (E_tm1 != self.pad_id).float().unsqueeze(1)
+        xtilde_t = self.embedding(E_tm1) * mask
         return xtilde_t
+
 
     def get_current_hidden_state(self, xtilde_t, htilde_tm1):
         # Recall:
@@ -340,12 +336,6 @@ class DecoderWithAttention(DecoderWithoutAttention):
         return c_t
 
 
-        # alpha_t = self.get_attention_weights(htilde_t, h, F_lens)  # (S, M)
-        # alpha_t = alpha_t.unsqueeze(2).expand(-1, -1, self.hidden_state_size)  # (S,M,2*H)
-        #
-        # return (alpha_t * h).sum(dim=0)  # (M, 2*H)
-
-
     def get_attention_weights(self, htilde_t, h, F_lens):
         # DO NOT MODIFY! Calculates attention weights, ensuring padded terms
         # in h have weight 0 and no gradient. You have to implement
@@ -356,6 +346,7 @@ class DecoderWithAttention(DecoderWithoutAttention):
         pad_mask = pad_mask.unsqueeze(-1) >= F_lens  # (S, M)
         e_t = e_t.masked_fill(pad_mask, -float('inf'))
         return torch.nn.functional.softmax(e_t, 0)
+
 
     def get_energy_scores(self, htilde_t, h):
         # Recall:
@@ -368,14 +359,6 @@ class DecoderWithAttention(DecoderWithoutAttention):
 
         htilde_t = htilde_t.unsqueeze(0)
         return torch.nn.functional.cosine_similarity(htilde_t, h, dim=2)
-        ##############
-        # csim = torch.nn.CosineSimilarity(dim=2)
-        # htilde_t = htilde_t.unsqueeze(0)
-        # similarties = csim(htilde_t, h)
-        # return similarties
-        #########
-
-
 
 
 class DecoderWithMultiHeadAttention(DecoderWithAttention):
@@ -457,16 +440,6 @@ class EncoderDecoder(EncoderDecoderBase):
         # 1. Relevant pytorch modules: torch.{zero_like, stack}
         # 2. Recall an LSTM's cell state is always initialized to zero.
         # 3. Note logits sequence dimension is one shorter than E (why?)
-        ####################################
-        # logits = []
-        # h_tilde_tm1 = None
-        # for t in range(E.size()[0] - 1):
-        #     logit, h_tilde_tm1 = self.decoder.forward(E[t], h_tilde_tm1, h, F_lens)
-        #     logits.append(logit)
-        #
-        # logits = torch.stack(logits, dim=0)
-        # return logits
-        ######################################
         T, N = E.size()
         htilde_tm1 = self.decoder.get_first_hidden_state(h, F_lens)
         if self.cell_type == 'lstm':
