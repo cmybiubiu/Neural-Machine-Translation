@@ -495,29 +495,29 @@ class EncoderDecoder(EncoderDecoderBase):
         # logits = torch.stack(logits, dim=0)
         # return logits
         ######################################
-        T, N = E.size()
-        htilde_tm1 = self.decoder.get_first_hidden_state(h, F_lens)
-        if self.cell_type == 'lstm':
-            cell_state = torch.zeros_like(htilde_tm1).to(htilde_tm1.device)
-        logits = []
-        for i in range(T - 1):
-            E_tm1 = E[i, :]
-            xtilde_t = self.decoder.get_current_rnn_input(E_tm1, htilde_tm1, h, F_lens)
-            if self.cell_type == 'lstm':
-                htilde_tm1, cell_state = self.decoder.get_current_hidden_state(xtilde_t, (htilde_tm1, cell_state))
-            else:
-                htilde_tm1 = self.decoder.get_current_hidden_state(xtilde_t, htilde_tm1)
-            logits.append(self.decoder.get_current_logits(htilde_tm1))
-        logits = torch.stack(logits, dim=0)
-        return logits
+        # T, N = E.size()
+        # htilde_tm1 = self.decoder.get_first_hidden_state(h, F_lens)
+        # if self.cell_type == 'lstm':
+        #     cell_state = torch.zeros_like(htilde_tm1).to(htilde_tm1.device)
+        # logits = []
+        # for i in range(T - 1):
+        #     E_tm1 = E[i, :]
+        #     xtilde_t = self.decoder.get_current_rnn_input(E_tm1, htilde_tm1, h, F_lens)
+        #     if self.cell_type == 'lstm':
+        #         htilde_tm1, cell_state = self.decoder.get_current_hidden_state(xtilde_t, (htilde_tm1, cell_state))
+        #     else:
+        #         htilde_tm1 = self.decoder.get_current_hidden_state(xtilde_t, htilde_tm1)
+        #     logits.append(self.decoder.get_current_logits(htilde_tm1))
+        # logits = torch.stack(logits, dim=0)
+        # return logits
 
-        # logits_arr = []
-        # T = E.shape[0]
-        # h_tilde_tm1 = None
-        # for t in range(T - 1):  # E[0, :] has been populated with self.target_sos, get rid of the SOS
-        #     logits_t, htilde_t = self.decoder.forward(E[t + 1], h_tilde_tm1, h, F_lens)
-        #     logits_arr.append(logits_t)
-        # return torch.stack(logits_arr)
+        logits_arr = []
+        T = E.shape[0]
+        h_tilde_tm1 = None
+        for t in range(T - 1):  # E[0, :] has been populated with self.target_sos, get rid of the SOS
+            logits_t, htilde_t = self.decoder.forward(E[t + 1], h_tilde_tm1, h, F_lens)
+            logits_arr.append(logits_t)
+        return torch.stack(logits_arr)
 
     def update_beam(self, htilde_t, b_tm1_1, logpb_tm1, logpy_t):
         # perform the operations within the psuedo-code's loop in the
