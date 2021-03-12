@@ -356,8 +356,6 @@ class DecoderWithMultiHeadAttention(DecoderWithAttention):
                                   self.hidden_state_size, bias=False)
 
 
-
-
     def attend(self, htilde_t, h, F_lens):
         # Hints:
         # 1. You can use super().attend to call for the regular attention
