@@ -300,9 +300,9 @@ class DecoderWithAttention(DecoderWithoutAttention):
         # get_energy_scores()
         # alpha_t (output) is of shape (S, M)
         e_t = self.get_energy_scores(htilde_t, h)
-        pad_mask = torch.arange(h.shape[0], device=h.device)
-        pad_mask = pad_mask.unsqueeze(-1) >= F_lens  # (S, M)
-        e_t = e_t.masked_fill(pad_mask, -float('inf'))
+        mask = torch.arange(h.shape[0], device=h.device)
+        mask = mask.unsqueeze(-1) >= F_lens  # (S, M)
+        e_t = e_t.masked_fill(mask, -float('inf'))
         return torch.nn.functional.softmax(e_t, 0)
 
 
@@ -449,23 +449,21 @@ class EncoderDecoder(EncoderDecoderBase):
         #   torch.{flatten, topk, unsqueeze, expand_as, gather, cat}
         # 2. If you flatten a two-dimensional array of shape z of (A, B),
         #   then the element z[a, b] maps to z'[a*B + b]
+
         M, K, V = logpy_t.size()
-        logpb_tm1 = logpb_tm1.unsqueeze(-1).expand(-1, -1, V)
-        logpb_t = logpb_tm1 + logpy_t  # (M,K,V)
-        logpb_t, indices = logpb_t.view(M, -1).topk(self.beam_width, dim=1)  # (M,K), (M,K)
-
-        indices_k = indices // V  # (M, K)
-        indices_v = indices % V  # (M, K)
-
+        logpb_t = logpb_tm1.unsqueeze(-1).expand(-1, -1, V) + logpy_t  # (M,K,V)
+        logpb_t, v = logpb_t.view(M, -1).topk(self.beam_width, dim=1)  # (M,K), (M,K
+        paths = torch.div(v, V)
+        v = torch.remainder(v, V)
+        b_tm1_1 = b_tm1_1.gather(2, paths.unsqueeze(0).expand_as(b_tm1_1))
+        # choose the htdile that coorespond to the taken paths
         if self.cell_type == 'lstm':
-            b_t_0 = (htilde_t[0].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[0])),
-                     htilde_t[1].gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t[1])))
+            b_t_0 = (htilde_t[0].gather(1, paths.unsqueeze(-1).expand_as(htilde_t[0])),
+                     htilde_t[1].gather(1, paths.unsqueeze(-1).expand_as(htilde_t[1])))
         else:
-            b_t_0 = htilde_t.gather(dim=1, index=indices_k.unsqueeze(-1).expand_as(htilde_t))  # (M,K,2*H)
-
-        b_tm1_1 = b_tm1_1.gather(dim=2, index=indices_k.unsqueeze(0).expand_as(b_tm1_1))  # (t,M,K)
-        b_t_1 = torch.cat([b_tm1_1, indices_v.unsqueeze(0)], dim=0)
-
+            b_t_0 = htilde_t.gather(1, paths.unsqueeze(-1).expand_as(htilde_t))
+        v = v.unsqueeze(0)
+        b_t_1 = torch.cat([b_tm1_1, v], dim=0)
         return b_t_0, b_t_1, logpb_t
 
 
