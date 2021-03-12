@@ -38,7 +38,6 @@ class Encoder(EncoderBase):
         #   self.hidden_state_size, self.num_hidden_layers.
         # 3. cell_type will be one of: ['lstm', 'gru', 'rnn']
         # 4. Relevant pytorch modules: torch.nn.{LSTM, GRU, RNN, Embedding}
-        #######
         if self.cell_type == 'gru':
             self.rnn = torch.nn.GRU(self.word_embedding_size, self.hidden_state_size, self.num_hidden_layers,
                                     bidirectional=True, dropout=self.dropout)
@@ -50,7 +49,6 @@ class Encoder(EncoderBase):
                                      bidirectional=True, dropout=self.dropout)
 
         self.embedding = torch.nn.Embedding(self.source_vocab_size, self.word_embedding_size, padding_idx=self.pad_id)
-        #########
 
 
     def forward_pass(self, F, F_lens, h_pad=0.):
@@ -75,10 +73,6 @@ class Encoder(EncoderBase):
         #   x (output) is shape (S, M, I)
         return self.embedding(F)
 
-        # mask = (F != self.pad_id).float().unsqueeze(-1)  # shape [S,N,1]
-        # x = self.embedding(F)  # shape [S,N,I]
-        # x *= mask
-        # return x
 
     def get_all_hidden_states(self, x, F_lens, h_pad):
         # Recall:
@@ -96,12 +90,6 @@ class Encoder(EncoderBase):
         h, _ = torch.nn.utils.rnn.pad_packed_sequence(h, padding_value=h_pad)
         return h
 
-        # mask = (x == 0).all(dim=-1)  # shape = [S,N]
-        # x = torch.nn.utils.rnn.pack_padded_sequence(x, F_lens, enforce_sorted=False)
-        # h, _ = self.rnn(x)
-        # h, _ = torch.nn.utils.rnn.pad_packed_sequence(h)  # shape [S, N, 2 * H]
-        # h[mask] = h_pad
-        # return h
 
 class DecoderWithoutAttention(DecoderBase):
     '''A recurrent decoder without attention'''
@@ -155,20 +143,13 @@ class DecoderWithoutAttention(DecoderBase):
         #   is either initialized, or t > 1.
         # 4. The output of an LSTM cell is a tuple (h, c), but a GRU cell or an
         #   RNN cell will only output h.
-        # embedded hidden
-        xtilde_t = self.get_current_rnn_input(E_tm1, htilde_tm1, h, F_lens)  # |embedding|
+        xtilde_t = self.get_current_rnn_input(E_tm1, htilde_tm1, h, F_lens)
+        htilde_t = self.get_current_hidden_state(xtilde_t, htilde_tm1)
 
-        # decoded hidden
-        htilde_t = self.get_current_hidden_state(xtilde_t, htilde_tm1)  # |rnn|
-
-        # output logits
         if self.cell_type == 'lstm':
-            # initialized cell state with zeros
-            # htilde_tm1 = (htilde_tm1, torch.zeros_like(htilde_tm1))
-            # so discard cell state here
-            logits_t = self.get_current_logits(htilde_t[0])  # |output layer|
+            logits_t = self.get_current_logits(htilde_t[0])
         else:
-            logits_t = self.get_current_logits(htilde_t)  # |output layer|
+            logits_t = self.get_current_logits(htilde_t)
 
         return logits_t, htilde_t
 
@@ -188,17 +169,10 @@ class DecoderWithoutAttention(DecoderBase):
         #   with the hidden states of the encoder's backward direction at time
         #   t=0
         # 2. Relevant pytorch functions: torch.cat
-        ###############
-        # h_forward = h[:, :, 0: (self.hidden_state_size // 2)]
-        # matrix_forward = torch.index_select(h_forward, 0, F_lens - 1)
-        # forward_direction = torch.transpose(torch.diagonal(matrix_forward, dim1=0, dim2=1), 0, 1)
-        # h_backward = h[0, :, (self.hidden_state_size // 2):] # t = 0
-        # return torch.cat((forward_direction, h_backward), dim=1)
-        ##################
-        S, N, hidden_state_size = h.size()
-        last_idx = (F_lens - 1).long()  # shape = (N,)
-        last_idx = last_idx.view(1, N, 1).expand(1, N, hidden_state_size)  # shape = [1, N, 2*H]
-        htilde_tm0 = h.gather(dim=0, index=last_idx).squeeze(0)  # [N, 2 * H]
+        S, M, hidden_state_size = h.size()
+        last_idx = (F_lens - 1).long()  # shape = (M,)
+        last_idx = last_idx.view(1, M, 1).expand(1, M, hidden_state_size)  # shape = [1, M, 2*H]
+        htilde_tm0 = h.gather(dim=0, index=last_idx).squeeze(0)  # [M, 2 * H]
         return htilde_tm0
 
     def get_current_rnn_input(self, E_tm1, htilde_tm1, h, F_lens):
@@ -208,7 +182,6 @@ class DecoderWithoutAttention(DecoderBase):
         #   h is of shape (S, M, 2 * H)
         #   F_lens is of shape (M,)
         #   xtilde_t (output) is of shape (M, Itilde)
-
         mask = (E_tm1 != self.pad_id).float().unsqueeze(1)
         xtilde_t = self.embedding(E_tm1) * mask
         return xtilde_t
@@ -220,15 +193,13 @@ class DecoderWithoutAttention(DecoderBase):
         #   htilde_tm1 is of shape (M, 2 * H) or a tuple of two of those (LSTM)
         #   htilde_t (output) is of same shape as htilde_tm1
 
-        # htilde_t = self.cell(xtilde_t, htilde_tm1)
-        # return htilde_t
-
         if self.cell_type == 'lstm':
             htilde_tm1 = (htilde_tm1[0][:, :self.hidden_state_size],
                           htilde_tm1[1][:, :self.hidden_state_size])
         else:
             htilde_tm1 = htilde_tm1[:, :self.hidden_state_size]
         return self.cell(xtilde_t, htilde_tm1)
+
 
     def get_current_logits(self, htilde_t):
         # Recall:
@@ -237,9 +208,6 @@ class DecoderWithoutAttention(DecoderBase):
 
         logits_t = self.ff(htilde_t)
         return logits_t
-
-        # logits = self.ff.forward(htilde_t)
-        # return logits
 
 
 class DecoderWithAttention(DecoderWithoutAttention):
@@ -288,19 +256,9 @@ class DecoderWithAttention(DecoderWithoutAttention):
         # Hint: Use attend() for c_t
         mask = (E_tm1 != self.pad_id).float().unsqueeze(1)  # (M,1)
         E_t = self.embedding(E_tm1) * mask
-
         c_t = self.attend(htilde_tm1[0] if self.cell_type == 'lstm' else htilde_tm1, h, F_lens)  # (M, 2*H)
 
         return torch.cat([E_t, c_t], dim=1)
-
-        # device = h.device
-        # mask = torch.where(E_tm1 == torch.tensor([self.pad_id]).to(device),
-        #                    torch.tensor([0.]).to(device), torch.tensor([1.]).to(device)).to(device)
-        # if self.cell_type == 'lstm':
-        #     htilde_tm1 = htilde_tm1[0]  # take the hidden states
-        # prev_input = self.embedding(E_tm1) * mask.view(-1, 1)
-        # # prev input concatenated with the attention context
-        # return torch.cat([prev_input, self.attend(htilde_tm1, h, F_lens)], 1)
 
 
     def attend(self, htilde_t, h, F_lens):
@@ -360,6 +318,7 @@ class DecoderWithAttention(DecoderWithoutAttention):
         # htilde_t = htilde_t.unsqueeze(0)
         # return torch.nn.functional.cosine_similarity(htilde_t, h, dim=2)
 
+        # htilde_t shape (S, M, 2 * H)
         s = h.shape[0]
         htilde_t = htilde_t.repeat(s, 1, 1)
         return torch.cosine_similarity(htilde_t, h, dim=2)
@@ -387,7 +346,17 @@ class DecoderWithMultiHeadAttention(DecoderWithAttention):
         #    should not be lists!
         # 5. You do *NOT* need self.heads at this point
         # 6. Relevant pytorch module: torch.nn.Linear (note: set bias=False!)
-        assert False, "Fill me"
+        self.W = torch.nn.Linear(self.hidden_state_size,
+                                  self.hidden_state_size, bias=False)
+
+        self.Wtilde = torch.nn.Linear(self.hidden_state_size,
+                                  self.hidden_state_size, bias=False)
+
+        self.Q = torch.nn.Linear(self.hidden_state_size,
+                                  self.hidden_state_size, bias=False)
+
+
+
 
     def attend(self, htilde_t, h, F_lens):
         # Hints:
@@ -482,7 +451,6 @@ class EncoderDecoder(EncoderDecoderBase):
         #   torch.{flatten, topk, unsqueeze, expand_as, gather, cat}
         # 2. If you flatten a two-dimensional array of shape z of (A, B),
         #   then the element z[a, b] maps to z'[a*B + b]
-        ####################################################
         M, K, V = logpy_t.size()
         logpb_tm1 = logpb_tm1.unsqueeze(-1).expand(-1, -1, V)
         logpb_t = logpb_tm1 + logpy_t  # (M,K,V)
@@ -501,7 +469,6 @@ class EncoderDecoder(EncoderDecoderBase):
         b_t_1 = torch.cat([b_tm1_1, indices_v.unsqueeze(0)], dim=0)
 
         return b_t_0, b_t_1, logpb_t
-        ########################################################
 
 
 
